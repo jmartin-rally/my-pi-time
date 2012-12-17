@@ -1,0 +1,13 @@
+{
+    "name": "My PI Time",
+    "className": "CustomApp",
+    "server": "https://rally1.rallydev.com",
+    "sdk": "2.0p5",
+    "javascript": [
+        "summaryModel.js",
+        "App.js"
+    ],
+    "css": [
+        "app.css"
+    ]
+}
