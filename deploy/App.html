@@ -23,6 +23,7 @@
                 extend: 'Rally.app.App',
                 componentCls: 'app',
                 items: [ 
+                         { xtype: 'container', itemId: 'print_box', padding: 5 },
                          { xtype: 'container', itemId: 'table_box', padding: 5 }
                          ],
                 launch: function() {
@@ -30,9 +31,11 @@
                     this.TotalByWorkProductID = { "None": 0 };
                     this.TotalByParentID = { "None": 0 };
                     this.ThemeName = "Theme";
-            
+                   
                 	this._setWeekFilter( new Date() );
+                    this._addPrintButton();
                     this._getTime();
+                   
                 },
                 _setWeekFilter: function( date_inside_the_week ) {
                 	var begin = Rally.util.DateTime.add( date_inside_the_week, "day", -7);
@@ -44,6 +47,32 @@
                         { property: 'WeekStartDate', operator: '<', value: end_iso },
                         { property: 'User', operator: '=', value: this.getContext().getUser()._ref }
                     ];
+                },
+                _addPrintButton: function() {
+                    var button = Ext.create( 'Rally.ui.Button', {
+                        text:'Print',
+                        listeners: {
+                            click: {
+                                fn: function() { this._print('table_box'); },
+                                scope: this
+                            }
+                        }
+                    } );
+                    this.down('#print_box').add(button);
+                },
+                _print: function( element_name ) {
+                    var printElement = this.down('#'+element_name);
+                    var printWindow = window.open('','', 'width=200,height=100');
+                    printWindow.document.write( '<html><head>');
+                    printWindow.document.write('<title>Print PI Time</title>');
+                    printWindow.document.write('<link rel="Stylesheet" type="text/css" href="/apps/2.0p5/rui/resources/css/rui.css" />');
+                    
+                    printWindow.document.write('</head><body>');
+                    printWindow.document.write(printElement.el.dom.innerHTML);
+                    printWindow.document.write('</body></html>');
+                    printWindow.print();
+                    
+                    
                 },
                 /*
                  * When we have total by top-level parent totals and the names of the themes,
@@ -59,15 +88,15 @@
                             }
                         }
                     }
-                    console.log(pi_data);
                     var store = Ext.create( 'Rally.data.custom.Store', {
+                        model: 'summaryModel',
                         data: this._hashToArray(pi_data)
                     });
                     
                     var grid = Ext.create( 'Rally.ui.grid.Grid', {
                         store: store,
                         columnCfgs: [ 
-                        { text: 'Name', dataIndex: 'Name' },
+                        { text: 'Theme', dataIndex: 'Name' },
                         { text: 'Total', dataIndex: 'Total' }
                         ]
                     });
@@ -100,7 +129,7 @@
                             }
                         }
                     }
-                    var pi_data = { "None": { "Name": "None", "FormattedID": "", "Total": 0, "ObjectID": "None" } };
+                    var pi_data = { "None": { "Name": "No Theme", "FormattedID": "", "Total": 0, "ObjectID": "None" } };
                     Ext.create('Rally.data.WsapiDataStore', {
             		    model: 'PortfolioItem',
                         filters: filters,
@@ -108,11 +137,9 @@
             		    listeners: {
             		        load: function(store, data, success) {
             		            //process data
-                                console.log(data);
                                 Ext.Array.each( data, function( pi_record ) {
                                     var pi = pi_record.data;
                                     if ( pi.PortfolioItemTypeName === that.ThemeName ) {
-                                        console.log( pi.FormattedID, pi.Name );
                                         pi_data[ pi.ObjectID ] = { "Name": pi.Name, "FormattedID": pi.FormattedID, "Total": 0, "ObjectID": pi.ObjectID};
                                     } 
                                 });

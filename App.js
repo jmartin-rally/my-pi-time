@@ -3,6 +3,7 @@ Ext.define('CustomApp', {
     extend: 'Rally.app.App',
     componentCls: 'app',
     items: [ 
+             { xtype: 'container', itemId: 'print_box', padding: 5 },
              { xtype: 'container', itemId: 'table_box', padding: 5 }
              ],
     launch: function() {
@@ -10,9 +11,11 @@ Ext.define('CustomApp', {
         this.TotalByWorkProductID = { "None": 0 };
         this.TotalByParentID = { "None": 0 };
         this.ThemeName = "Theme";
-
+       
     	this._setWeekFilter( new Date() );
+        this._addPrintButton();
         this._getTime();
+       
     },
     _setWeekFilter: function( date_inside_the_week ) {
     	var begin = Rally.util.DateTime.add( date_inside_the_week, "day", -7);
@@ -24,6 +27,32 @@ Ext.define('CustomApp', {
             { property: 'WeekStartDate', operator: '<', value: end_iso },
             { property: 'User', operator: '=', value: this.getContext().getUser()._ref }
         ];
+    },
+    _addPrintButton: function() {
+        var button = Ext.create( 'Rally.ui.Button', {
+            text:'Print',
+            listeners: {
+                click: {
+                    fn: function() { this._print('table_box'); },
+                    scope: this
+                }
+            }
+        } );
+        this.down('#print_box').add(button);
+    },
+    _print: function( element_name ) {
+        var printElement = this.down('#'+element_name);
+        var printWindow = window.open('','', 'width=200,height=100');
+        printWindow.document.write( '<html><head>');
+        printWindow.document.write('<title>Print PI Time</title>');
+        printWindow.document.write('<link rel="Stylesheet" type="text/css" href="/apps/2.0p5/rui/resources/css/rui.css" />');
+        
+        printWindow.document.write('</head><body>');
+        printWindow.document.write(printElement.el.dom.innerHTML);
+        printWindow.document.write('</body></html>');
+        printWindow.print();
+        
+        
     },
     /*
      * When we have total by top-level parent totals and the names of the themes,
