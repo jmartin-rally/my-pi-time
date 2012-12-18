@@ -3,7 +3,10 @@ Ext.define('CustomApp', {
     extend: 'Rally.app.App',
     componentCls: 'app',
     items: [ 
-             { xtype: 'container', itemId: 'print_box', padding: 5 },
+            { xtype: 'container', itemId: 'selector_box', padding: 5, layout: { type: 'hbox' }, items: [
+		        { xtype: 'container', itemId: 'week_box', padding: 5 },
+		        { xtype: 'container', itemId: 'print_box', padding: 5 }
+               ]},
              { xtype: 'container', itemId: 'table_box', padding: 5 }
              ],
     launch: function() {
@@ -13,9 +16,24 @@ Ext.define('CustomApp', {
         this.ThemeName = "Theme";
        
     	this._setWeekFilter( new Date() );
+        this._addWeekSelector();
         this._addPrintButton();
         this._getTime();
        
+    },
+    _addWeekSelector: function() {
+        var date_selector = Ext.create('Rally.ui.DateField',{
+            fieldLabel: 'Week of',
+            value: this._setWeekFilter(new Date()),
+            listeners: {
+                change: function( cal, newValue, oldValue, opts ) {
+                    cal.setValue( this._setWeekFilter(newValue));
+                    this._getTime();
+                },
+                scope: this
+            }
+        });
+        this.down('#week_box').add(date_selector);
     },
     _setWeekFilter: function( date_inside_the_week ) {
     	var begin = Rally.util.DateTime.add( date_inside_the_week, "day", -7);
@@ -27,6 +45,9 @@ Ext.define('CustomApp', {
             { property: 'WeekStartDate', operator: '<', value: end_iso },
             { property: 'User', operator: '=', value: this.getContext().getUser()._ref }
         ];
+        
+        var display_begin = Rally.util.DateTime.add( date_inside_the_week, "day", -1 * ( date_inside_the_week.getDay()))
+        return display_begin;
     },
     _addPrintButton: function() {
         var button = Ext.create( 'Rally.ui.Button', {
@@ -59,6 +80,7 @@ Ext.define('CustomApp', {
      * only keep the totals for things that are under themes (or mark as "None")
      */
     _makeSummaryGrid: function(pi_data) {
+        if ( this.summary_grid ) { this.summary_grid.destroy(); }
         for ( var parentID in this.TotalByParentID ) {
             if ( this.TotalByParentID.hasOwnProperty(parentID) ) {
                 if ( pi_data[ parentID ] ) {
@@ -73,7 +95,7 @@ Ext.define('CustomApp', {
             data: this._hashToArray(pi_data)
         });
         
-        var grid = Ext.create( 'Rally.ui.grid.Grid', {
+        this.summary_grid = Ext.create( 'Rally.ui.grid.Grid', {
             store: store,
             columnCfgs: [ 
             { text: 'Theme', dataIndex: 'Name' },
@@ -81,7 +103,7 @@ Ext.define('CustomApp', {
             ]
         });
         
-        this.down('#table_box').add(grid);
+        this.down('#table_box').add(this.summary_grid);
     },
     _hashToArray: function(hash) {
         var theArray = [];
@@ -208,6 +230,7 @@ Ext.define('CustomApp', {
      */
     _getTime: function() {
         var that = this;
+        if ( this.summary_grid ) { this.summary_grid.destroy(); }
         var time_store = Ext.create( 'Rally.data.WsapiDataStore', {
             autoLoad: true,
             model: 'TimeEntryItem',
