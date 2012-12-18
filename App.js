@@ -11,8 +11,6 @@ Ext.define('CustomApp', {
              ],
     launch: function() {
         //Write app code here
-        this.TotalByWorkProductID = { "None": 0 };
-        this.TotalByParentID = { "None": 0 };
         this.ThemeName = "Theme";
        
     	this._setWeekFilter( new Date() );
@@ -27,8 +25,13 @@ Ext.define('CustomApp', {
             value: this._setWeekFilter(new Date()),
             listeners: {
                 change: function( cal, newValue, oldValue, opts ) {
-                    cal.setValue( this._setWeekFilter(newValue));
-                    this._getTime();
+                    var adjustedValue = this._setWeekFilter(newValue);
+                    // to prevent double getting
+                    if ( newValue.setMilliseconds(0) == adjustedValue.setMilliseconds(0) ) {
+                        this._getTime();
+                    } else {
+                        cal.setValue( adjustedValue );
+                    }
                 },
                 scope: this
             }
@@ -46,7 +49,7 @@ Ext.define('CustomApp', {
             { property: 'User', operator: '=', value: this.getContext().getUser()._ref }
         ];
         
-        var display_begin = Rally.util.DateTime.add( date_inside_the_week, "day", -1 * ( date_inside_the_week.getDay()))
+        display_begin = Rally.util.DateTime.add( date_inside_the_week, "day", -1 * ( date_inside_the_week.getDay()))
         return display_begin;
     },
     _addPrintButton: function() {
@@ -72,8 +75,6 @@ Ext.define('CustomApp', {
         printWindow.document.write(printElement.el.dom.innerHTML);
         printWindow.document.write('</body></html>');
         printWindow.print();
-        
-        
     },
     /*
      * When we have total by top-level parent totals and the names of the themes,
@@ -84,12 +85,13 @@ Ext.define('CustomApp', {
         for ( var parentID in this.TotalByParentID ) {
             if ( this.TotalByParentID.hasOwnProperty(parentID) ) {
                 if ( pi_data[ parentID ] ) {
-                    pi_data[ parentID ].Total += this.TotalByParentID[parentID];
+                    pi_data[ parentID ] = this._mergeDayValues( pi_data[parentID], this.TotalByParentID[parentID] );
                 } else {
-                    pi_data.None.Total += this.TotalByParentID[parentID];
+                    pi_data.None = this._mergeDayValues( pi_data.None, this.TotalByParentID[parentID] );
                 }
             }
         }
+        console.log("pi data", pi_data );
         var store = Ext.create( 'Rally.data.custom.Store', {
             model: 'summaryModel',
             data: this._hashToArray(pi_data)
@@ -100,6 +102,13 @@ Ext.define('CustomApp', {
             showPagingToolbar: false,
             columnCfgs: [ 
             { text: 'Theme', dataIndex: 'Name' },
+            { text: 'Sunday', dataIndex: 'Sunday' },
+            { text: 'Monday', dataIndex: 'Monday' },
+            { text: 'Tuesday', dataIndex: 'Tuesday' },
+            { text: 'Wednesday', dataIndex: 'Wednesday' },
+            { text: 'Thursday', dataIndex: 'Thursday' },
+            { text: 'Friday', dataIndex: 'Friday' },
+            { text: 'Saturday', dataIndex: 'Saturday' },
             { text: 'Total', dataIndex: 'Total' }
             ]
         });
@@ -191,6 +200,7 @@ Ext.define('CustomApp', {
 	            filters: filters,
 	            listeners: {
 	                load: function( store, data, success ) {
+                        that.TotalByParentID = { };
 	                    that._setTotalByParent( data );
 	                }
 	            }
@@ -214,7 +224,7 @@ Ext.define('CustomApp', {
                 var myID = snapshot.ObjectID;
                 if ( that.TotalByWorkProductID[myID] ) {
                     if ( that.TotalByParentID[parentID] ) {
-                        that.TotalByParentID[parentID] += that.TotalByWorkProductID[myID];
+                        that.TotalByParentID[parentID] = that._mergeDayValues( that.TotalByParentID[parentID], that.TotalByWorkProductID[myID] );
                     } else {
                         that.TotalByParentID[parentID] = that.TotalByWorkProductID[myID]; 
                     }
@@ -231,6 +241,7 @@ Ext.define('CustomApp', {
      */
     _getTime: function() {
         var that = this;
+        this.TotalByParentID = { };
         if ( this.summary_grid ) { this.summary_grid.destroy(); }
         var time_store = Ext.create( 'Rally.data.WsapiDataStore', {
             autoLoad: true,
@@ -240,25 +251,53 @@ Ext.define('CustomApp', {
             listeners: {
                 load: function( store, data, success ) {
                     //console.log( data );
-                    that.TotalByWorkProductID = { "None": 0 };
+                    that.TotalByWorkProductID = { };
                     Ext.Array.each( data, function(datum) {
                         var time_line = datum.data;
                         var wp = "None";
                         if ( time_line.WorkProduct ) {
                             wp = time_line.WorkProduct.ObjectID ;
                         }
-                        Ext.Array.each( time_line.Values, function(value) {
-                            if ( !that.TotalByWorkProductID[wp] ) {
-                                that.TotalByWorkProductID[wp] = 0;
-                            }
-                            that.TotalByWorkProductID[wp] += value.Hours;
-                        });
+                        that._addDayValues( wp, time_line.Values );
                     });
                     that._getTreeFromLookback();
                 },
                 scope: this
             }
         });
-        
+    },
+    _mergeDayValues: function( aHash, bHash ) {
+        var totalHash = aHash;
+        for ( var day in bHash ) {
+            if ( aHash.hasOwnProperty(day) && bHash.hasOwnProperty(day) ) {
+                totalHash[day] = aHash[day] + bHash[day];
+            } else if ( bHash.hasOwnProperty(day) ) {
+                totalHash[day] = bHash[day];
+            }
+        }
+        return totalHash;
+    },
+    _addDayValues: function( wp, entries ) {
+        var that = this;
+        days = [ "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" ];
+        Ext.Array.each( entries, function(entry){
+            if ( ! that.TotalByWorkProductID[wp] ) {
+                that.TotalByWorkProductID[wp] = {
+                    Sunday: 0,
+                    Monday: 0,
+                    Tuesday: 0,
+                    Wednesday: 0,
+                    Thursday: 0,
+                    Friday: 0,
+                    Saturday: 0,
+                    Total: 0
+                }
+            }
+            var day_of_week = Rally.util.DateTime.fromIsoString( entry.DateVal ).getUTCDay();
+            var day_of_week_name = days[day_of_week];
+            console.log( entry.DateVal , day_of_week, day_of_week_name );
+            that.TotalByWorkProductID[wp][day_of_week_name] += entry.Hours;
+            that.TotalByWorkProductID[wp].Total += entry.Hours;
+        });
     }
 });
