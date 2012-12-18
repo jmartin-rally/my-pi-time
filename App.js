@@ -97,6 +97,7 @@ Ext.define('CustomApp', {
         
         this.summary_grid = Ext.create( 'Rally.ui.grid.Grid', {
             store: store,
+            showPagingToolbar: false,
             columnCfgs: [ 
             { text: 'Theme', dataIndex: 'Name' },
             { text: 'Total', dataIndex: 'Total' }
