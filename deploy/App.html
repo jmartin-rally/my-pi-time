@@ -118,7 +118,7 @@
                             }
                         }
                     }
-                    console.log("pi data", pi_data );
+                    window.console && console.log("pi data", pi_data );
                     var store = Ext.create( 'Rally.data.custom.Store', {
                         model: 'summaryModel',
                         data: this._hashToArray(pi_data)
@@ -155,6 +155,7 @@
                  * Have to see what top-level items are themes
                  */
                 _getAssociatedThemes: function() {
+                    window.console && console.log( "_getAssociatedThemes" );
                     var that = this;
                     var filters = null;
                     for ( var parentID in this.TotalByParentID ) {
@@ -169,31 +170,178 @@
                         }
                     }
                     var pi_data = { "None": { "Name": "No Theme", "FormattedID": "", "Total": 0, "ObjectID": "None" } };
+                    if ( filters ) {
+            	        Ext.create('Rally.data.WsapiDataStore', {
+            			    model: 'PortfolioItem',
+            	            filters: filters,
+            	            autoLoad: true,
+                            context: { project: null },
+            			    listeners: {
+            			        load: function(store, data, success) {
+            			            //process data
+            	                    Ext.Array.each( data, function( pi_record ) {
+            	                        var pi = pi_record.data;
+            	                        if ( pi.PortfolioItemTypeName === that.ThemeName ) {
+            	                            pi_data[ pi.ObjectID ] = { "Name": pi.Name, "FormattedID": pi.FormattedID, "Total": 0, "ObjectID": pi.ObjectID};
+            	                        } 
+            	                    });
+            	                    that._makeSummaryGrid(pi_data);
+            			        }
+            			    },
+            			    fetch: ['Name', 'FormattedID', 'PortfolioItemType', 'PortfolioItemTypeName']
+            			});
+                    } else {
+                        that._makeSummaryGrid(pi_data);
+                    }
+                },
+                /*
+                 * Hacks needed until the lookback api is working.
+                 */
+                _getTreeFromClimb: function() {
+                  window.console && console.log( "_getTreeFromClimb");
+                  var that = this;
+                  var filters = null;
+                  for ( var itemID in this.TotalByWorkProductID ) {
+                    if ( this.TotalByWorkProductID.hasOwnProperty(itemID) && itemID != "None" ) {
+                        if ( filters ) {
+                            filters = filters.or( Ext.create('Rally.data.QueryFilter', 
+                                { property: 'ObjectID', operator: '=', value: itemID } ));
+                        } else {
+                            filters = Ext.create('Rally.data.QueryFilter',
+                                { property: 'ObjectID', operator: '=', value: itemID });
+                        }
+                    }
+                  }
+                  
+                  if ( ! filters ) {
+                    var pi_data = { "None": { "Name": "No Theme", "FormattedID": "", "Total": 0, "ObjectID": "None" } };
+                    that._makeSummaryGrid(pi_data);
+                  } else {
+            	      Ext.create('Rally.data.WsapiDataStore', {
+            	        model: 'HierarchicalRequirement',
+            	        filters: filters,
+            	        autoLoad: true,
+                        context: { project: null },
+            	        listeners: {
+            	            load: function(store, data, success) {
+            	                //process data
+            	                var consolidated_data = [];
+            	                var parent_filters = null;
+            	                var initiative_filters = null;
+            	                that._climbOneStory( 5, consolidated_data, initiative_filters, data );
+            	            }
+            	        },
+            	        fetch: ['Name','FormattedID','PortfolioItem','Parent','ObjectID']
+            	     });
+                  }
+                    
+                },
+                _climbOneStory: function( counter, consolidated_data, initiative_filters, data ) {
+                    window.console && console.log( "_climbOneStory", counter );
+                    var that = this;
+                    var parent_filters = null;
+                    var first_pass = true;
+                    if ( consolidated_data.length > 0 ) { first_pass = false; }
+                    
+                    Ext.Array.each( data, function( story_record ) {
+            	        var story = story_record.data;
+            	        var parent = null;
+                        var initiative = null;
+            	        if ( story.Parent ) {
+            	            parent = story.Parent.ObjectID;
+            	            if ( parent_filters ) {
+            	                parent_filters = parent_filters.or( Ext.create('Rally.data.QueryFilter', 
+            	                    { property: 'ObjectID', operator: '=', value: story.Parent.ObjectID } ));
+            	            } else {
+            	                parent_filters = Ext.create('Rally.data.QueryFilter',
+            	                    { property: 'ObjectID', operator: '=', value: story.Parent.ObjectID });
+            	            }
+            	        } else if ( story.PortfolioItem ) {
+                            parent = story.PortfolioItem.ObjectID;
+                            if ( story.PortfolioItem.Parent ) {
+                                initiative = story.PortfolioItem.Parent.ObjectID;
+            		            if ( initiative_filters ) {
+            		                initiative_filters = initiative_filters.or( Ext.create('Rally.data.QueryFilter', 
+            		                    { property: 'ObjectID', operator: '=', value: initiative } ));
+            		            } else {
+            		                initiative_filters = Ext.create('Rally.data.QueryFilter',
+            		                    { property: 'ObjectID', operator: '=', value: initiative });
+            		            }
+                            }
+            	        }
+                        if ( parent && ! first_pass ) {
+            	            Ext.Array.each( consolidated_data, function( incoming_hierarchy ) {
+            	               if ( incoming_hierarchy.data._ItemHierarchy[0] === story.ObjectID ) {
+            	                   incoming_hierarchy.data._ItemHierarchy.unshift( parent );
+                                   if ( initiative ) {
+                                    incoming_hierarchy.data._ItemHierarchy.unshift( initiative );
+                                   }
+            	               }
+            	            });
+                        } else if ( first_pass ) {
+                            var hierarchy = [ story.ObjectID ];
+                            if ( parent ) { 
+                                hierarchy.unshift( parent ); 
+                                if ( initiative ) {
+                                    hierarchy.unshift( initiative );
+                                }
+                            }
+                            consolidated_data.push( { data: { _ItemHierarchy: hierarchy, ObjectID: story.ObjectID } });
+                        }
+            	    });
+                    
+                    if ( counter < 1 || parent_filters === null ) {
+                        that._getInitiatives( consolidated_data, initiative_filters );
+                    } else {
+            	        Ext.create('Rally.data.WsapiDataStore', {
+            		        model: 'HierarchicalRequirement',
+            		        filters: parent_filters,
+                            context: { project: null },
+            		        autoLoad: true,
+            		        listeners: {
+            		            load: function(store, data, success) {
+                                    counter = counter - 1;
+            		                that._climbOneStory(counter, consolidated_data, initiative_filters, data);
+            		            }
+            	            },
+            	            fetch: ['Name','FormattedID','PortfolioItem','Parent','ObjectID']
+            	        });
+                    }
+                },
+                _getInitiatives: function( consolidated_data, initiative_filters ) {
+                    var that = this;
                     Ext.create('Rally.data.WsapiDataStore', {
-            		    model: 'PortfolioItem',
-                        filters: filters,
+                        model: 'PortfolioItem/Initiative',
+                        filters: initiative_filters,
+                        context: { project: null },
                         autoLoad: true,
-            		    listeners: {
-            		        load: function(store, data, success) {
-            		            //process data
-                                Ext.Array.each( data, function( pi_record ) {
-                                    var pi = pi_record.data;
-                                    if ( pi.PortfolioItemTypeName === that.ThemeName ) {
-                                        pi_data[ pi.ObjectID ] = { "Name": pi.Name, "FormattedID": pi.FormattedID, "Total": 0, "ObjectID": pi.ObjectID};
-                                    } 
+                        listeners: {
+                            load: function(store, data, success) {
+                                Ext.Array.each( data, function(datum) {
+                                    var initiative = datum.data;
+                                    if ( initiative.Parent ) {
+                                        Ext.Array.each( consolidated_data, function(incoming_hierarchy) {
+                                            if ( incoming_hierarchy.data._ItemHierarchy[0] === initiative.ObjectID ) {
+                                                incoming_hierarchy.data._ItemHierarchy.unshift( initiative.Parent.ObjectID );
+                                            }
+                                        });
+                                    }
                                 });
-                                that._makeSummaryGrid(pi_data);
-            		        }
-            		    },
-            		    fetch: ['Name', 'FormattedID', 'PortfolioItemType', 'PortfolioItemTypeName']
-            		});
+                                
+            			        that._TotalByParentID = {};
+            			        that._setTotalByParent(consolidated_data);
+                            }
+                        },
+                        fetch: ['Name','FormattedID','Parent','ObjectID']
+                    });
+                    
                 },
                 /*
                  * After we get all the times, we go look up the times' workproducts using
                  * lookback to find the top-level parent (so we can consolidate)
                  */
                 _getTreeFromLookback: function() {
-                    console.log( "totals so far", this.TotalByWorkProductID );
+                    window.console && console.log( "_getTreeFromLookback", this.TotalByWorkProductID );
                     var that = this;
                     var filters = null;
                     for ( var itemID in this.TotalByWorkProductID ) {
@@ -242,6 +390,7 @@
                  * for that top-level parent (not yet checking to make sure it's a PI
                  */
                 _setTotalByParent: function( data ) {
+                    window.console && console.log( "_setTotalByParent", data );
                     var that = this;
                     this.TotalByParentID = { "None": 0 };
                     Ext.Array.each( data, function(datum) {
@@ -259,7 +408,7 @@
                         }
                     });
                     that.TotalByParentID.None = that.TotalByWorkProductID.None;
-                    console.log( "Total By Highest Parent I know about:", that.TotalByParentID );
+                    window.console && console.log( "Total By Highest Parent I know about:", that.TotalByParentID );
                     this._getAssociatedThemes();
                 },
                 /*
@@ -274,6 +423,7 @@
                         autoLoad: true,
                         model: 'TimeEntryItem',
                         filters: this.week_filter,
+                        context: { project: null },
                         fetch: ['WorkProduct','ObjectID','Values','Project','Name','DateVal','Hours', 'Task'],
                         listeners: {
                             load: function( store, data, success ) {
@@ -287,7 +437,8 @@
                                     }
                                     that._addDayValues( wp, time_line.Values );
                                 });
-                                that._getTreeFromLookback();
+                                //that._getTreeFromLookback();
+                                that._getTreeFromClimb();
                             },
                             scope: this
                         }
@@ -322,7 +473,7 @@
                         }
                         var day_of_week = Rally.util.DateTime.fromIsoString( entry.DateVal ).getUTCDay();
                         var day_of_week_name = days[day_of_week];
-                        console.log( entry.DateVal , day_of_week, day_of_week_name );
+                        window.console && console.log( entry.DateVal , day_of_week, day_of_week_name );
                         that.TotalByWorkProductID[wp][day_of_week_name] += entry.Hours;
                         that.TotalByWorkProductID[wp].Total += entry.Hours;
                     });
