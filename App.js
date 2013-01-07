@@ -11,7 +11,7 @@ Ext.define('CustomApp', {
              ],
     launch: function() {
         //Write app code here
-        this.ThemeName = "Theme";
+        this.ThemeName = "Oracle Project";
        
     	this._setWeekFilter( new Date() );
         this._addWeekSelector();
@@ -101,7 +101,7 @@ Ext.define('CustomApp', {
             store: store,
             showPagingToolbar: false,
             columnCfgs: [ 
-            { text: 'Theme', dataIndex: 'Name' },
+            { text: 'Theme', dataIndex: 'Name', flex: 2 },
             { text: 'Sunday', dataIndex: 'Sunday' },
             { text: 'Monday', dataIndex: 'Monday' },
             { text: 'Tuesday', dataIndex: 'Tuesday' },
@@ -264,6 +264,7 @@ Ext.define('CustomApp', {
 	    });
         
         if ( counter < 1 || parent_filters === null ) {
+            window.console && console.log( consolidated_data );
             that._getInitiatives( consolidated_data, initiative_filters );
         } else {
 	        Ext.create('Rally.data.WsapiDataStore', {
